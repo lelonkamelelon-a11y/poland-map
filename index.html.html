@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poland Community Map</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            plRed: {
+              500: '#dc2626',
+              600: '#b91c1c',
+              700: '#991b1b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Leaflet customization & custom scrollbars */
+    .leaflet-container {
+      background: #090d16 !important;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    /* Dark theme for Leaflet Popups */
+    .leaflet-popup-content-wrapper {
+      background: rgba(15, 23, 42, 0.95) !important;
+      backdrop-filter: blur(12px);
+      color: #f1f5f9 !important;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 0.75rem !important;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    }
+    .leaflet-popup-tip {
+      background: rgba(15, 23, 42, 0.95) !important;
+    }
+    .leaflet-popup-close-button {
+      color: #94a3b8 !important;
+      padding: 6px !important;
+    }
+
+    /* Pulse animation for selected pin target */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.4); opacity: 0.2; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .pin-pulse-ring {
+      animation: pulse-ring 2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.8);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(100, 116, 139, 1);
+    }
+  </style>
+</head>
+<body class="h-full w-full overflow-hidden flex flex-col md:flex-row bg-slate-950 font-sans text-slate-100 antialiased selection:bg-rose-500 selection:text-white">
+
+  <!-- MAIN CONTAINER -->
+  <div class="relative flex-1 h-full w-full flex flex-col">
+    
+    <!-- HEADER BAR -->
+    <header class="absolute top-4 left-4 right-4 z-[1000] pointer-events-none flex justify-between items-center gap-3">
+      <!-- Title & Branding -->
+      <div class="pointer-events-auto bg-slate-900/85 backdrop-blur-md border border-slate-800/80 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 transition-all hover:border-slate-700">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-600 to-red-700 flex items-center justify-center text-white shadow-lg shadow-rose-900/40 font-bold text-lg">
+          🇵🇱
+        </div>
+        <div>
+          <h1 class="font-bold text-base tracking-tight text-white flex items-center gap-2">
+            Poland Map <span class="text-xs px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-semibold border border-rose-500/30">Live</span>
+          </h1>
+          <p class="text-[11px] text-slate-400">Click anywhere in Poland to sign in</p>
+        </div>
+      </div>
+
+      <!-- Action Buttons Top Right -->
+      <div class="pointer-events-auto flex items-center gap-2">
+        <button id="toggleSidebarBtn" title="Toggle Visitor List" class="md:hidden bg-slate-900/85 backdrop-blur-md border border-slate-800 text-slate-200 px-3 py-2.5 rounded-xl shadow-lg flex items-center gap-2 hover:bg-slate-800 active:scale-95 transition">
+          <i class="fa-solid fa-users text-rose-400"></i>
+          <span id="mobileCountBadge" class="text-xs bg-slate-800 px-2 py-0.5 rounded-full font-bold">0</span>
+        </button>
+        <button id="addMyPinBtn" class="bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-medium text-xs md:text-sm px-4 py-2.5 rounded-xl shadow-lg shadow-rose-950/50 flex items-center gap-2 transition active:scale-95">
+          <i class="fa-solid fa-location-dot"></i>
+          <span>Add My Pin</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- MAP CONTAINER -->
+    <div id="map" class="w-full h-full z-10"></div>
+
+    <!-- INSTRUCTIONS BANNER OVER MAP (Mobile/Desktop dynamic prompt) -->
+    <div id="clickPrompt" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-slate-900/95 backdrop-blur-md text-white border border-rose-500/40 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce">
+      <div class="w-3 h-3 rounded-full bg-rose-500 animate-ping"></div>
+      <span class="text-sm font-medium">Click on the map to set your location!</span>
+      <button id="cancelPinModeBtn" class="ml-2 text-slate-400 hover:text-white text-xs bg-slate-800 px-2 py-1 rounded-lg">Cancel</button>
+    </div>
+  </div>
+
+  <!-- SIDEBAR PANEL -->
+  <aside id="sidebar" class="fixed inset-y-0 right-0 z-[1001] w-full md:w-96 bg-slate-900/95 backdrop-blur-xl border-l border-slate-800/80 flex flex-col transform translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out shadow-2xl">
+    
+    <!-- Sidebar Header -->
+    <div class="p-4 border-b border-slate-800/80 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-users text-rose-500 text-lg"></i>
+        <h2 class="font-bold text-slate-100 text-base">Community Members</h2>
+        <span id="totalCount" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0</span>
+      </div>
+      <button id="closeSidebarBtn" class="md:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Search / Filter -->
+    <div class="p-4 border-b border-slate-800/80 bg-slate-950/40">
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
+        <input type="text" id="searchInput" placeholder="Search member or city..." class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs md:text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/60 transition">
+      </div>
+    </div>
+
+    <!-- List of Visitors -->
+    <div id="visitorList" class="flex-1 overflow-y-auto p-3 space-y-2">
+      <!-- Loading Skeleton -->
+      <div class="animate-pulse space-y-2 p-2">
+        <div class="h-16 bg-slate-800/60 rounded-xl"></div>
+        <div class="h-16 bg-slate-800/60 rounded-xl"></div>
+        <div class="h-16 bg-slate-800/60 rounded-xl"></div>
+      </div>
+    </div>
+
+    <!-- Sidebar Footer Info -->
+    <div class="p-4 border-t border-slate-800/80 bg-slate-950/60 text-center">
+      <p class="text-xs text-slate-500">
+        Hosted on GitHub Pages • Powered by OpenStreetMap & Firebase
+      </p>
+    </div>
+  </aside>
+
+  <!-- ADD / SIGN IN MODAL -->
+  <div id="addModal" class="hidden fixed inset-0 z-[2000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden transform transition-all">
+      
+      <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-gradient-to-r from-slate-900 via-slate-900 to-rose-950/30">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+            <i class="fa-solid fa-pen-nib text-sm"></i>
+          </div>
+          <h3 class="font-bold text-slate-100 text-base">Sign the Poland Map</h3>
+        </div>
+        <button id="closeModalBtn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="signForm" class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Your Name / Nickname <span class="text-rose-500">*</span></label>
+          <input type="text" id="inputName" required maxlength="30" placeholder="e.g. Jan Kowalski or TechFan99" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">City / Region (Optional)</label>
+          <input type="text" id="inputCity" maxlength="35" placeholder="e.g. Warsaw, Kraków, Gdańsk" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Short Message / Greeting (Optional)</label>
+          <textarea id="inputMessage" rows="2" maxlength="120" placeholder="Greetings from Warsaw! Glad to be here." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition resize-none"></textarea>
+        </div>
+
+        <div class="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
+          <span class="text-xs text-slate-400">Selected Coordinates:</span>
+          <span id="coordsDisplay" class="text-xs font-mono text-rose-400 bg-rose-950/40 border border-rose-500/20 px-2 py-0.5 rounded">52.2297, 21.0122</span>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button type="button" id="reselectLocationBtn" class="w-1/3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs py-2.5 rounded-xl transition">
+            Change Location
+          </button>
+          <button type="submit" id="submitPinBtn" class="w-2/3 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-medium text-xs md:text-sm py-2.5 rounded-xl shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2 transition">
+            <i class="fa-solid fa-check"></i>
+            <span>Publish My Pin</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="fixed bottom-5 right-5 z-[3000] translate-y-20 opacity-0 transition-all duration-300 bg-slate-900 border border-slate-700 text-slate-100 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+    <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+    <span id="toastMessage" class="text-sm">Operation completed.</span>
+  </div>
+
+  <!-- FIREBASE SCRIPTS (MODULAR v11) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      signInWithCustomToken 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+      getFirestore, 
+      collection, 
+      doc, 
+      setDoc, 
+      onSnapshot 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Global variable setup
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'poland-community-map';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' 
+      ? JSON.parse(__firebase_config)
+      : {
+          // Fallback demo config placeholder if outside environment
+          apiKey: "demo-api-key",
+          authDomain: "demo.firebaseapp.com",
+          projectId: "demo-project",
+          storageBucket: "demo.appspot.com",
+          messagingSenderId: "123456789",
+          appId: "1:123456789:web:demo"
+        };
+
+    // Firebase Initialization
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // State Variables
+    let currentUser = null;
+    let markersMap = new Map(); // pinId -> Leaflet Marker instance
+    let allEntries = [];
+    let isSelectingLocation = false;
+    let selectedCoords = null;
+    let map = null;
+    let tempMarker = null;
+
+    // Poland Coordinates Bounds
+    const POLAND_CENTER = [52.0693, 19.4803];
+    const POLAND_BOUNDS = [
+      [49.00, 14.07], // South West
+      [54.90, 24.15]  // North East
+    ];
+
+    // Initialize Map & Firebase Auth
+    window.addEventListener('DOMContentLoaded', async () => {
+      initMap();
+      await initAuth();
+      setupEventListeners();
+    });
+
+    // Initialize Leaflet Map
+    function initMap() {
+      // Create Leaflet Map centered on Poland
+      map = L.map('map', {
+        center: POLAND_CENTER,
+        zoom: 6.5,
+        minZoom: 6,
+        maxZoom: 16,
+        maxBounds: POLAND_BOUNDS,
+        maxBoundsViscosity: 0.8,
+        zoomControl: false
+      });
+
+      // Position zoom controls top right below header
+      L.control.zoom({ position: 'topright' }).addTo(map);
+
+      // CartoDB Dark Matter Tiles (Sleek dark theme)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(map);
+
+      // Handle map click for placing location
+      map.on('click', (e) => {
+        if (isSelectingLocation || tempMarker) {
+          setTempPin(e.latlng.lat, e.latlng.lng);
+          openAddModal(e.latlng.lat, e.latlng.lng);
+        } else {
+          // If clicked directly without explicit mode, prompt user option
+          setTempPin(e.latlng.lat, e.latlng.lng);
+          openAddModal(e.latlng.lat, e.latlng.lng);
+        }
+      });
+    }
+
+    // Authenticate user with Firebase
+    async function initAuth() {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          const userCredential = await signInWithCustomToken(auth, __initial_auth_token);
+          currentUser = userCredential.user;
+        } else {
+          const userCredential = await signInAnonymously(auth);
+          currentUser = userCredential.user;
+        }
+        console.log("Authenticated as:", currentUser.uid);
+        
+        // Start listening to real-time pins updates
+        subscribeToPins();
+      } catch (err) {
+        console.error("Auth initialization error:", err);
+        showToast("Connected in offline view mode.", "info");
+      }
+    }
+
+    // Real-time Firestore Listener
+    function subscribeToPins() {
+      // Path requirement rule 1: /artifacts/{appId}/public/data/{collectionName}
+      const pinsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'pins');
+
+      onSnapshot(pinsCollection, (snapshot) => {
+        const entries = [];
+        snapshot.forEach((docSnap) => {
+          entries.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        // Client-side sort by timestamp descending (RULE 2: avoid complex compound queries)
+        entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+        allEntries = entries;
+        renderPinsOnMap(entries);
+        renderSidebarList(entries);
+        updateCounters(entries.length);
+      }, (error) => {
+        console.error("Error fetching pins:", error);
+        showToast("Error loading map pins.", "error");
+      });
+    }
+
+    // Render Markers on Map
+    function renderPinsOnMap(entries) {
+      // Remove stale markers
+      markersMap.forEach((marker, id) => {
+        if (!entries.some(e => e.id === id)) {
+          map.removeLayer(marker);
+          markersMap.delete(id);
+        }
+      });
+
+      // Add/Update markers
+      entries.forEach((entry) => {
+        if (!entry.lat || !entry.lng) return;
+
+        const isOwner = currentUser && entry.userId === currentUser.uid;
+
+        // Custom HTML Icon for pins
+        const customIcon = L.divIcon({
+          className: 'custom-pin-icon',
+          html: `
+            <div class="relative group cursor-pointer">
+              <div class="w-8 h-8 rounded-full ${isOwner ? 'bg-amber-500 ring-4 ring-amber-500/30' : 'bg-rose-600 ring-4 ring-rose-600/30'} text-white flex items-center justify-center font-bold text-xs shadow-xl transform transition hover:scale-125">
+                ${isOwner ? '<i class="fa-solid fa-star text-[10px]"></i>' : '<i class="fa-solid fa-user text-[10px]"></i>'}
+              </div>
+              <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 ${isOwner ? 'bg-amber-500' : 'bg-rose-600'} rotate-45"></div>
+            </div>
+          `,
+          iconSize: [32, 32],
+          iconAnchor: [16, 32],
+          popupAnchor: [0, -32]
+        });
+
+        const popupContent = `
+          <div class="p-1 max-w-xs">
+            <div class="flex items-center gap-2 mb-1">
+              <div class="w-6 h-6 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-xs">
+                ${escapeHtml(entry.name.charAt(0).toUpperCase())}
+              </div>
+              <div>
+                <h4 class="font-bold text-sm text-white leading-tight">${escapeHtml(entry.name)}</h4>
+                ${entry.city ? `<span class="text-[11px] text-slate-400"><i class="fa-solid fa-location-dot text-rose-500 mr-1"></i>${escapeHtml(entry.city)}</span>` : ''}
+              </div>
+            </div>
+            ${entry.message ? `<p class="text-xs text-slate-300 mt-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800 font-normal italic">"${escapeHtml(entry.message)}"</p>` : ''}
+            <div class="mt-2 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
+              <span>Signed Community Member</span>
+              ${isOwner ? '<span class="text-amber-400 font-semibold">(Your Pin)</span>' : ''}
+            </div>
+          </div>
+        `;
+
+        if (markersMap.has(entry.id)) {
+          const marker = markersMap.get(entry.id);
+          marker.setLatLng([entry.lat, entry.lng]);
+          marker.setPopupContent(popupContent);
+        } else {
+          const marker = L.marker([entry.lat, entry.lng], { icon: customIcon }).addTo(map);
+          marker.bindPopup(popupContent);
+          markersMap.set(entry.id, marker);
+        }
+      });
+    }
+
+    // Render Sidebar Entries List
+    function renderSidebarList(entries) {
+      const container = document.getElementById('visitorList');
+      const searchQuery = document.getElementById('searchInput').value.toLowerCase().trim();
+
+      const filtered = entries.filter(e => 
+        e.name.toLowerCase().includes(searchQuery) || 
+        (e.city && e.city.toLowerCase().includes(searchQuery))
+      );
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 px-4">
+            <div class="w-12 h-12 rounded-full bg-slate-800 text-slate-500 flex items-center justify-center mx-auto mb-3 text-lg">
+              <i class="fa-solid fa-map-pin"></i>
+            </div>
+            <p class="text-sm font-medium text-slate-400">No visitors found</p>
+            <p class="text-xs text-slate-600 mt-1">Be the first to sign on the map!</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(item => {
+        const isOwner = currentUser && item.userId === currentUser.uid;
+        return `
+          <div data-id="${item.id}" class="visitor-card cursor-pointer p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-rose-500/50 hover:bg-slate-900/80 transition group">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg ${isOwner ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-300'} flex items-center justify-center font-bold text-xs shrink-0">
+                  ${escapeHtml(item.name.charAt(0).toUpperCase())}
+                </div>
+                <div>
+                  <h4 class="font-semibold text-xs md:text-sm text-slate-100 group-hover:text-rose-400 transition flex items-center gap-1.5">
+                    ${escapeHtml(item.name)}
+                    ${isOwner ? '<span class="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded">You</span>' : ''}
+                  </h4>
+                  ${item.city ? `<p class="text-[11px] text-slate-400 flex items-center gap-1"><i class="fa-solid fa-location-dot text-rose-500 text-[10px]"></i>${escapeHtml(item.city)}</p>` : ''}
+                </div>
+              </div>
+              <button class="text-slate-600 group-hover:text-rose-400 text-xs p-1">
+                <i class="fa-solid fa-crosshairs"></i>
+              </button>
+            </div>
+            ${item.message ? `<p class="text-xs text-slate-400 mt-2 line-clamp-2 pl-2 border-l-2 border-rose-500/30">${escapeHtml(item.message)}</p>` : ''}
+          </div>
+        `;
+      }).join('');
+
+      // Add click listener to cards to focus pin on map
+      container.querySelectorAll('.visitor-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const id = card.getAttribute('data-id');
+          const marker = markersMap.get(id);
+          if (marker) {
+            map.flyTo(marker.getLatLng(), 10, { duration: 1.2 });
+            setTimeout(() => marker.openPopup(), 1200);
+            
+            // Close mobile sidebar if open
+            if (window.innerWidth < 768) {
+              document.getElementById('sidebar').classList.add('translate-x-full');
+            }
+          }
+        });
+      });
+    }
+
+    // Set Temporary Drag/Click Pin Marker
+    function setTempPin(lat, lng) {
+      selectedCoords = { lat: parseFloat(lat.toFixed(5)), lng: parseFloat(lng.toFixed(5)) };
+      
+      if (tempMarker) {
+        tempMarker.setLatLng([lat, lng]);
+      } else {
+        const tempIcon = L.divIcon({
+          className: 'temp-pin-icon',
+          html: `
+            <div class="relative">
+              <div class="pin-pulse-ring absolute -inset-2 rounded-full bg-rose-500"></div>
+              <div class="w-8 h-8 rounded-full bg-rose-500 text-white flex items-center justify-center font-bold text-xs shadow-2xl">
+                <i class="fa-solid fa-plus text-xs"></i>
+              </div>
+            </div>
+          `,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+        tempMarker = L.marker([lat, lng], { icon: tempIcon }).addTo(map);
+      }
+
+      document.getElementById('coordsDisplay').textContent = `${selectedCoords.lat}, ${selectedCoords.lng}`;
+    }
+
+    // Remove Temporary Pin
+    function clearTempPin() {
+      if (tempMarker) {
+        map.removeLayer(tempMarker);
+        tempMarker = null;
+      }
+      selectedCoords = null;
+    }
+
+    // Event Listeners Setup
+    function setupEventListeners() {
+      const addMyPinBtn = document.getElementById('addMyPinBtn');
+      const clickPrompt = document.getElementById('clickPrompt');
+      const cancelPinModeBtn = document.getElementById('cancelPinModeBtn');
+      const addModal = document.getElementById('addModal');
+      const closeModalBtn = document.getElementById('closeModalBtn');
+      const reselectLocationBtn = document.getElementById('reselectLocationBtn');
+      const signForm = document.getElementById('signForm');
+      const searchInput = document.getElementById('searchInput');
+
+      const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
+      const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+      const sidebar = document.getElementById('sidebar');
+
+      // Add My Pin button click
+      addMyPinBtn.addEventListener('click', () => {
+        isSelectingLocation = true;
+        clickPrompt.classList.remove('hidden');
+        showToast("Click anywhere on Poland map to place your pin", "info");
+      });
+
+      // Cancel selection mode
+      cancelPinModeBtn.addEventListener('click', () => {
+        isSelectingLocation = false;
+        clickPrompt.classList.add('hidden');
+        clearTempPin();
+      });
+
+      // Reselect Location from Modal
+      reselectLocationBtn.addEventListener('click', () => {
+        addModal.classList.add('hidden');
+        isSelectingLocation = true;
+        clickPrompt.classList.remove('hidden');
+      });
+
+      // Close Modal
+      closeModalBtn.addEventListener('click', () => {
+        addModal.classList.add('hidden');
+        clearTempPin();
+      });
+
+      // Sidebar Mobile Toggle
+      toggleSidebarBtn.addEventListener('click', () => {
+        sidebar.classList.remove('translate-x-full');
+      });
+      closeSidebarBtn.addEventListener('click', () => {
+        sidebar.classList.add('translate-x-full');
+      });
+
+      // Live search input
+      searchInput.addEventListener('input', () => {
+        renderSidebarList(allEntries);
+      });
+
+      // Handle Form Submit & Firestore Save
+      signForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (!selectedCoords) {
+          showToast("Please select a location on the map first.", "error");
+          return;
+        }
+
+        if (!currentUser) {
+          showToast("Signing in anonymously...", "info");
+          await initAuth();
+        }
+
+        const name = document.getElementById('inputName').value.trim();
+        const city = document.getElementById('inputCity').value.trim();
+        const message = document.getElementById('inputMessage').value.trim();
+
+        if (!name) return;
+
+        const submitBtn = document.getElementById('submitPinBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> Saving...`;
+
+        try {
+          // Unique document ID per user to allow 1 signature per visitor (or update existing)
+          const pinDocId = `user_${currentUser.uid}`;
+          const pinDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'pins', pinDocId);
+
+          await setDoc(pinDocRef, {
+            userId: currentUser.uid,
+            name: name,
+            city: city,
+            message: message,
+            lat: selectedCoords.lat,
+            lng: selectedCoords.lng,
+            timestamp: Date.now()
+          });
+
+          showToast("Your pin has been added to Poland map!", "success");
+          
+          // Reset Modal & State
+          addModal.classList.add('hidden');
+          clickPrompt.classList.add('hidden');
+          isSelectingLocation = false;
+          clearTempPin();
+          signForm.reset();
+
+          // Zoom into newly added pin
+          map.flyTo([selectedCoords.lat, selectedCoords.lng], 9, { duration: 1.5 });
+
+        } catch (error) {
+          console.error("Firestore save error:", error);
+          showToast("Failed to save pin. Please try again.", "error");
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i class="fa-solid fa-check"></i><span>Publish My Pin</span>`;
+        }
+      });
+    }
+
+    // Modal Helper
+    function openAddModal(lat, lng) {
+      document.getElementById('clickPrompt').classList.add('hidden');
+      isSelectingLocation = false;
+      document.getElementById('addModal').classList.remove('hidden');
+
+      // Pre-fill if user already added a pin previously
+      if (currentUser) {
+        const existingDoc = allEntries.find(e => e.userId === currentUser.uid);
+        if (existingDoc) {
+          document.getElementById('inputName').value = existingDoc.name || '';
+          document.getElementById('inputCity').value = existingDoc.city || '';
+          document.getElementById('inputMessage').value = existingDoc.message || '';
+        }
+      }
+    }
+
+    // Counters update
+    function updateCounters(count) {
+      document.getElementById('totalCount').textContent = count;
+      document.getElementById('mobileCountBadge').textContent = count;
+    }
+
+    // Toast Notification Utility
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toast');
+      const toastMessage = document.getElementById('toastMessage');
+      const toastIcon = document.getElementById('toastIcon');
+
+      toastMessage.textContent = message;
+
+      if (type === 'error') {
+        toastIcon.className = "fa-solid fa-circle-exclamation text-rose-500 text-lg";
+      } else if (type === 'info') {
+        toastIcon.className = "fa-solid fa-circle-info text-blue-400 text-lg";
+      } else {
+        toastIcon.className = "fa-solid fa-circle-check text-emerald-400 text-lg";
+      }
+
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 3500);
+    }
+
+    // Helper to sanitize HTML strings
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, (m) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[m]));
+    }
+  </script>
+</body>
+</html>
